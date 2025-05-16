@@ -1,1 +1,165 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential # Importing the Sequential class from Keras
+from tensorflow.keras.layers import LSTM, Dense # Importing necessary layers
+from matplotlib.dates import DateFormatter
+import matplotlib.dates as mdates
+
+df = pd.read_csv('Final_Stock_Price_Prediction - Sheet1.csv')
+print(df.head(120))
+
+if 'date' not in df.columns:
+  df=df.reset_index()
+df['DATE'] = pd.to_datetime(df['DATE'])  # Convert to datetime if needed
+df.set_index('DATE', inplace=True)
+data = df[['CLOSE']]
+
+# Scale the data
+scaler = MinMaxScaler(feature_range=(0, 1))
+data['CLOSE'] = scaler.fit_transform(data['CLOSE'].values.reshape(-1, 1))
+
+if 'date' not in df.columns:
+  df=df.reset_index()
+
+df['DATE'] = pd.to_datetime(df['DATE'])  # Convert to datetime if needed
+df.set_index('DATE', inplace=True)
+data = df[['CLOSE']]
+
+# Scale the data
+scaler = MinMaxScaler(feature_range=(0, 1))
+data['CLOSE'] = scaler.fit_transform(data['CLOSE'].values.reshape(-1, 1))
+#df[['CLOSE','OPEN']]
+# Create a dataset with lookback
+lookback = 60  # Number of previous days to consider
+def create_dataset(dataset, look_back=lookback):
+    X, Y = [], []
+    for i in range(len(dataset)-look_back-1):
+        a = dataset[i:(i+look_back), 0]
+        X.append(a)
+        Y.append(dataset[i + look_back, 0])
+    return np.array(X), np.array(Y) # This line was incorrectly indented
+
+X, y = create_dataset(data[['CLOSE']].values, lookback)
+
+# Reshape input to be [samples, time steps, features]
+X = np.reshape(X, (X.shape[0], X.shape[1], 1))
+
+# Split data into training and testing sets
+train_size = int(len(X) * 0.8)
+X_train, X_test = X[0:train_size], X[train_size:len(X)]
+y_train, y_test = y[0:train_size], y[train_size:len(y)]
+
+# Create and fit the LSTM network
+model = Sequential()
+model.add(LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1], 1)))
+model.add(LSTM(units=50))
+model.add(Dense(1))
+
+model.compile(loss='mean_squared_error', optimizer='adam')
+model.fit(X_train, y_train, epochs=100, batch_size=32)
+
+# Make predictions
+trainPredict = model.predict(X_train)
+testPredict = model.predict(X_test)
+
+# Invert predictions to get actual values
+trainPredict = scaler.inverse_transform(trainPredict)
+y_train = scaler.inverse_transform([y_train])
+testPredict = scaler.inverse_transform(testPredict)
+y_test = scaler.inverse_transform([y_test])
+
+X = df[['OPEN', 'HIGH', 'LOW', 'CLOSE']]  # Adjust features as needed
+y = df['CLOSE']  # Target is the closing price
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = LinearRegression()  # Choose a suitable model
+model.fit(X_train, y_train)
+
+y_pred = model.predict(X_test)
+
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+print(f"Mean Squared Error: {mse}")
+print(f"R-squared: {r2}")
+
+plt.figure(figsize=(12, 6))
+#plt.plot(y_test.index, y_test, label='Actual')
+#plt.plot(y_test.index, y_pred, label='Predicted')
+plt.plot(df.index, df['OPEN'], label='Open Price', color='blue', alpha=0.7)
+plt.plot(df.index, df['CLOSE'], label='Close Price', color='red', alpha=0.7)
+plt.title('AMAZON STOCK PRICE PREDICTION ')
+plt.xlabel('DATE')
+plt.ylabel('VALUES')
+plt.legend()
+plt.show()
+
+
+plt.figure(figsize=(12 , 6))
+# Select a subset of data for better visualization (e.g., last 60 days)
+subset = df.last('100D')
+# Plot Open and Close as bars
+width = 0.4  # Width of bars
+plt.bar(subset.index - pd.Timedelta(days=width/2), subset['OPEN'],
+        width=width, color='skyblue', label='Open Price')
+plt.bar(subset.index + pd.Timedelta(days=width/2), subset['CLOSE'],
+        width=width, color='salmon', label='Close Price')
+# Format x-axis
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=5))
+plt.gcf().autofmt_xdate()  # Rotate dates
+plt.title('AMAZON STOCK PRICE(Last 100 Days )')
+plt.xlabel('DATE')
+plt.ylabel('PRICE')
+plt.legend()
+plt.grid(axis='y', alpha=0.3)
+plt.tight_layout()
+plt.show()
+plt.figure(figsize=(15, 7))
+
+# Select subset for clarity
+subset = df.last('50D')
+# Plot high-low range as vertical lines
+plt.vlines(x=subset.index,
+           ymin=subset['LOW'],
+           ymax=subset['HIGH'],
+           color='black',
+           linewidth=1,
+           label='High-Low Range')
+
+# Plot open-close as thicker lines
+for idx, row in subset.iterrows():
+    color = 'green' if row['CLOSE'] >= row['OPEN'] else 'red'
+    plt.plot([idx, idx], [row['OPEN'], row['CLOSE']],
+             color=color,
+             linewidth=3,
+             solid_capstyle='round')
+
+# Formatting
+plt.gca().xaxis.set_major_formatter(DateFormatter('%Y-%m-%d'))
+plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=3))
+plt.gcf().autofmt_xdate()
+
+plt.title('DATE-WISEHiGH-LOW RANGE (Last 50 Days)')
+plt.xlabel('DATE')
+plt.ylabel('PRICE')
+plt.legend()
+plt.grid(axis='y', alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+X = df[['OPEN', 'CLOSE']] # Selecting some features
+y = df['VOLUME']
+ #Train-Test Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=20, random_state=42)
+
+model = LinearRegression()
+model.fit(X_train, y_train)
 
